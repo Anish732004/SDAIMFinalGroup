@@ -19,7 +19,7 @@ def get_hf_username():
         return os.getenv("SPACE_AUTHOR_NAME")
     if os.getenv("SPACE_ID"):
         return os.getenv("SPACE_ID").split("/")[0]
-    return "YOUR_HF_USERNAME"
+    return "Anish732004"
 
 HF_USERNAME = get_hf_username()
 MODEL_REPO = f"{HF_USERNAME}/credit-card-default-model"
