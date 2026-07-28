@@ -6,6 +6,8 @@ import sys
 import joblib
 import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
+import seaborn as sns
 from huggingface_hub import hf_hub_download
 
 sys.path.append(os.path.dirname(__file__))
@@ -21,10 +23,26 @@ TOKEN = os.getenv("HF_TOKEN")
 def load_assets():
     model_path = hf_hub_download(MODEL_REPO, "credit_default_model.joblib", token=TOKEN)
     metadata_path = hf_hub_download(MODEL_REPO, "model_metadata.json", token=TOKEN)
-    return joblib.load(model_path), json.load(open(metadata_path, encoding="utf-8"))
+    
+    # Try downloading comparison files if available
+    val_comp = None
+    test_comp = None
+    try:
+        val_path = hf_hub_download(MODEL_REPO, "validation_comparison.csv", token=TOKEN)
+        val_comp = pd.read_csv(val_path)
+    except Exception:
+        pass
+
+    try:
+        test_path = hf_hub_download(MODEL_REPO, "test_comparison.csv", token=TOKEN)
+        test_comp = pd.read_csv(test_path)
+    except Exception:
+        pass
+
+    return joblib.load(model_path), json.load(open(metadata_path, encoding="utf-8")), val_comp, test_comp
 
 try:
-    model, metadata = load_assets()
+    model, metadata, val_comparison_df, test_comparison_df = load_assets()
 except Exception as exc:
     st.error(f"Model could not be loaded. Check HF_USERNAME and repository access. Details: {exc}")
     st.stop()
@@ -56,16 +74,112 @@ months = [
 st.title("Credit Card Default Risk Prediction")
 st.caption("Decision-support demonstration. The model excludes ID, gender, education and marital status from prediction.")
 
-overview_tab, single_tab, batch_tab = st.tabs(["Overview", "Single Customer", "Batch Upload"])
+overview_tab, comparison_tab, single_tab, batch_tab = st.tabs([
+    "Overview", "Model Comparison & Metrics", "Single Customer", "Batch Upload"
+])
 
 with overview_tab:
     st.subheader("Application overview")
     st.write("The model estimates next-month default probability using credit limit, age, six-month repayment status, bill history and payment history.")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Selected model", metadata["model_name"])
-    c2.metric("Decision threshold", f"{threshold:.2f}")
-    c3.metric("Model inputs", len(RAW_MODEL_FEATURES))
+    c1.metric("Selected Champion Model", metadata["model_name"])
+    c2.metric("Optimal Decision Threshold", f"{threshold:.4f}")
+    c3.metric("Raw Model Inputs", len(RAW_MODEL_FEATURES))
     st.info("Risk bands are communication aids: Low < 30%, Medium 30–60%, High > 60%. They are not official banking policy thresholds.")
+
+with comparison_tab:
+    st.subheader("Model Performance & Comparative Evaluation")
+    st.markdown("""
+    This section provides a rigorous benchmarking of candidate models evaluated on credit default prediction.
+    Models are assessed across **7 core metrics**: ROC-AUC, PR-AUC, F1 Score, Accuracy, Precision, Recall, and Optimal Decision Threshold.
+    """)
+
+    # Determine data source for comparison table
+    comp_df = test_comparison_df if test_comparison_df is not None else val_comparison_df
+    if comp_df is None and "validation_comparison" in metadata:
+        comp_df = pd.DataFrame(metadata["validation_comparison"])
+
+    if comp_df is not None:
+        dataset_choice = st.radio("Select Dataset Split for Evaluation:", ["Validation Set", "Test Set"], horizontal=True)
+        active_df = (test_comparison_df if (dataset_choice == "Test Set" and test_comparison_df is not None) else comp_df).copy()
+
+        # Format columns cleanly
+        display_cols = ["model", "roc_auc", "pr_auc", "f1", "accuracy", "precision", "recall", "threshold"]
+        rename_dict = {
+            "model": "Model Name",
+            "roc_auc": "ROC-AUC",
+            "pr_auc": "PR-AUC",
+            "f1": "F1 Score",
+            "accuracy": "Accuracy",
+            "precision": "Precision",
+            "recall": "Recall",
+            "threshold": "Optimal Threshold"
+        }
+        
+        # Available columns filter
+        avail_cols = [c for c in display_cols if c in active_df.columns]
+        formatted_df = active_df[avail_cols].rename(columns=rename_dict)
+        
+        # Round numeric values
+        numeric_cols = [c for c in formatted_df.columns if c != "Model Name"]
+        formatted_df[numeric_cols] = formatted_df[numeric_cols].applymap(lambda x: round(x, 4) if isinstance(x, (int, float)) else x)
+
+        st.markdown("#### 1. Comprehensive Metrics Benchmarking Table")
+        st.dataframe(formatted_df, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        col_left, col_right = st.columns(2)
+
+        with col_left:
+            st.markdown("#### 2. Visual Metric Comparison")
+            metrics_to_plot = ["ROC-AUC", "PR-AUC", "F1 Score", "Accuracy", "Precision", "Recall"]
+            plot_data = formatted_df.melt(id_vars=["Model Name"], value_vars=[m for m in metrics_to_plot if m in formatted_df.columns],
+                                           var_name="Metric", value_name="Score")
+
+            fig, ax = plt.subplots(figsize=(7, 4.5))
+            sns.barplot(data=plot_data, x="Metric", y="Score", hue="Model Name", palette="viridis", ax=ax)
+            ax.set_ylim(0, 1.0)
+            ax.set_ylabel("Score (0.0 to 1.0)")
+            ax.set_title("Performance Metric Comparison")
+            plt.xticks(rotation=25)
+            plt.tight_layout()
+            st.pyplot(fig)
+
+        with col_right:
+            st.markdown("#### 3. Confusion Matrix Breakdown")
+            if "tn" in active_df.columns:
+                selected_model_name = st.selectbox("Select Model for Confusion Matrix:", active_df["model"].unique())
+                model_row = active_df[active_df["model"] == selected_model_name].iloc[0]
+                
+                cm_matrix = [
+                    [int(model_row["tn"]), int(model_row["fp"])],
+                    [int(model_row["fn"]), int(model_row["tp"])]
+                ]
+
+                fig_cm, ax_cm = plt.subplots(figsize=(5, 4))
+                sns.heatmap(cm_matrix, annot=True, fmt="d", cmap="Blues", cbar=False,
+                            xticklabels=["Predicted Non-Default (0)", "Predicted Default (1)"],
+                            yticklabels=["Actual Non-Default (0)", "Actual Default (1)"], ax=ax_cm)
+                ax_cm.set_title(f"Confusion Matrix: {selected_model_name}")
+                plt.tight_layout()
+                st.pyplot(fig_cm)
+
+                c_tn, c_fp, c_fn, c_tp = st.columns(4)
+                c_tn.metric("True Negatives", f"{int(model_row['tn']):,}")
+                c_fp.metric("False Positives", f"{int(model_row['fp']):,}")
+                c_fn.metric("False Negatives", f"{int(model_row['fn']):,}")
+                c_tp.metric("True Positives", f"{int(model_row['tp']):,}")
+
+        st.markdown("---")
+        st.markdown("#### 4. Key Financial & Risk Insights")
+        st.info("""
+        **Executive Financial & Risk Analysis**:
+        - **Cost Asymmetry in Credit Risk**: In credit default management, **False Negatives** (failing to detect a default) carry significantly higher financial impact than **False Positives** (unnecessary risk review).
+        - **Why Random Forest Was Selected**: Random Forest consistently demonstrates superior **ROC-AUC** and **PR-AUC** scores compared to Logistic Regression, effectively capturing non-linear interactions between payment histories and bill amounts.
+        - **Optimal Threshold Strategy**: The threshold is optimized to maximize the **F1 Score**, striking an ideal operational balance between capturing defaulting borrowers (**Recall**) and avoiding excessive false alarms (**Precision**).
+        """)
+    else:
+        st.warning("Comparison metrics data is not available yet. Please complete model training via the MLOps pipeline.")
 
 with single_tab:
     st.subheader("Single-customer assessment")
@@ -135,3 +249,4 @@ with batch_tab:
             )
         except Exception as exc:
             st.error(f"Batch scoring failed: {exc}")
+
