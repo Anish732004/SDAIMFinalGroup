@@ -9,7 +9,13 @@ create_repo(
     SPACE_REPO, repo_type="space", space_sdk="docker",
     exist_ok=True, token=TOKEN
 )
-HfApi(token=TOKEN).upload_folder(
+api = HfApi(token=TOKEN)
+try:
+    api.add_space_variable(repo_id=SPACE_REPO, key="HF_USERNAME", value=HF_USERNAME)
+except Exception as e:
+    print(f"Note: Could not set HF_USERNAME space variable: {e}")
+
+api.upload_folder(
     folder_path="mlops/deployment",
     repo_id=SPACE_REPO,
     repo_type="space"

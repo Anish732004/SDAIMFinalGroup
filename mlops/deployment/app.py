@@ -12,13 +12,23 @@ sys.path.append(os.path.dirname(__file__))
 from feature_utils import RAW_MODEL_FEATURES, engineer_features, validate_raw_features
 
 st.set_page_config(page_title="Credit Card Default Risk", layout="wide")
-HF_USERNAME = os.getenv("HF_USERNAME", "YOUR_HF_USERNAME")
+def get_hf_username():
+    if os.getenv("HF_USERNAME"):
+        return os.getenv("HF_USERNAME")
+    if os.getenv("SPACE_AUTHOR_NAME"):
+        return os.getenv("SPACE_AUTHOR_NAME")
+    if os.getenv("SPACE_ID"):
+        return os.getenv("SPACE_ID").split("/")[0]
+    return "YOUR_HF_USERNAME"
+
+HF_USERNAME = get_hf_username()
 MODEL_REPO = f"{HF_USERNAME}/credit-card-default-model"
+TOKEN = os.getenv("HF_TOKEN")
 
 @st.cache_resource
 def load_assets():
-    model_path = hf_hub_download(MODEL_REPO, "credit_default_model.joblib")
-    metadata_path = hf_hub_download(MODEL_REPO, "model_metadata.json")
+    model_path = hf_hub_download(MODEL_REPO, "credit_default_model.joblib", token=TOKEN)
+    metadata_path = hf_hub_download(MODEL_REPO, "model_metadata.json", token=TOKEN)
     return joblib.load(model_path), json.load(open(metadata_path, encoding="utf-8"))
 
 try:
