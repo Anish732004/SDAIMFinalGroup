@@ -12,16 +12,8 @@ sys.path.append(os.path.dirname(__file__))
 from feature_utils import RAW_MODEL_FEATURES, engineer_features, validate_raw_features
 
 st.set_page_config(page_title="Credit Card Default Risk", layout="wide")
-def get_hf_username():
-    if os.getenv("HF_USERNAME"):
-        return os.getenv("HF_USERNAME")
-    if os.getenv("SPACE_AUTHOR_NAME"):
-        return os.getenv("SPACE_AUTHOR_NAME")
-    if os.getenv("SPACE_ID"):
-        return os.getenv("SPACE_ID").split("/")[0]
-    return "Anish732004"
 
-HF_USERNAME = get_hf_username()
+HF_USERNAME = os.getenv("HF_USERNAME")
 MODEL_REPO = f"{HF_USERNAME}/credit-card-default-model"
 TOKEN = os.getenv("HF_TOKEN")
 
