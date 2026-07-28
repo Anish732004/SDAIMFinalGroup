@@ -21,7 +21,7 @@ sys.path.append("mlops")
 from feature_utils import TARGET, RAW_MODEL_FEATURES, engineer_features
 
 RANDOM_STATE = 42
-HF_USERNAME = "sarthm19"
+HF_USERNAME = os.environ["HF_USERNAME"]
 DATASET_REPO = f"{HF_USERNAME}/uci-credit-card-default"
 MODEL_REPO = f"{HF_USERNAME}/credit-card-default-model"
 TOKEN = os.environ["HF_TOKEN"]
