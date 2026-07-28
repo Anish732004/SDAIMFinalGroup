@@ -21,7 +21,8 @@ if os.path.exists(dockerfile_path):
     with open(dockerfile_path, "r", encoding="utf-8") as f:
         docker_lines = f.readlines()
     if not any("ENV HF_USERNAME" in line for line in docker_lines):
-        docker_lines.insert(5, f"ENV HF_USERNAME={HF_USERNAME}\n")
+        cmd_idx = next((i for i, line in enumerate(docker_lines) if line.strip().startswith("CMD")), len(docker_lines))
+        docker_lines.insert(cmd_idx, f"ENV HF_USERNAME={HF_USERNAME}\n")
         with open(dockerfile_path, "w", encoding="utf-8") as f:
             f.writelines(docker_lines)
 
