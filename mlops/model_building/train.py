@@ -144,6 +144,7 @@ for path in [model_path, metadata_path, comparison_path, test_comparison_path]:
         path_or_fileobj=str(path), path_in_repo=path.name,
         repo_id=MODEL_REPO, repo_type="model"
     )
+test_metrics = metadata["test_metrics"]
 print("Selected model:", best_name)
 print("Threshold:", round(best_threshold, 4))
 print("Test metrics:", test_metrics)
